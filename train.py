@@ -135,9 +135,8 @@ def main() -> None:
         callbacks=callbacks,
     )
 
-    # Save final model (ModelCheckpoint already saved the best one)
-    model.save(args.model)
-    print(f"Model saved to: {os.path.abspath(args.model)}")
+    # ModelCheckpoint already saved the best model during training
+    print(f"Best model saved to: {os.path.abspath(args.model)}")
 
     # Print training summary
     best_val_loss = min(history.history.get("val_loss", [float("inf")]))

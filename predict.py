@@ -29,7 +29,7 @@ import argparse
 import math
 import os
 import sys
-from typing import Iterator, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -117,31 +117,36 @@ def _image_paths_from_csv(
     csv_path: str,
     data_dir: str,
     camera: str = "center",
-) -> List[Tuple[str, float]]:
+) -> List[Tuple[str, Optional[float]]]:
     """Return list of (image_path, ground_truth_angle) from a CSV file."""
     df = pd.read_csv(csv_path)
     df.columns = [c.strip() for c in df.columns]
     col_map = {"center": "centercam", "left": "leftcam", "right": "rightcam"}
     img_col = col_map.get(camera, "centercam")
 
-    pairs = []
+    pairs: List[Tuple[str, Optional[float]]] = []
     for _, row in df.iterrows():
         raw = str(row[img_col]).strip()
         path = raw if (os.path.isabs(raw) and os.path.exists(raw)) \
                else os.path.join(data_dir, raw)
-        gt = float(row["steering_angle"])
+        gt: Optional[float] = float(row["steering_angle"])
         pairs.append((path, gt))
     return pairs
 
 
-def _image_paths_from_folder(folder: str) -> List[Tuple[str, float]]:
-    """Return list of (image_path, 0.0) sorted alphabetically."""
+def _image_paths_from_folder(folder: str) -> List[Tuple[str, Optional[float]]]:
+    """Return list of (image_path, None) sorted alphabetically.
+
+    Ground truth is unavailable for folder-based input; ``None`` is used as
+    the sentinel so that a legitimate straight-ahead angle of 0.0 is not
+    misinterpreted as "no ground truth".
+    """
     exts = {".jpg", ".jpeg", ".png", ".bmp"}
     paths = sorted(
         p for p in (os.path.join(folder, f) for f in os.listdir(folder))
         if os.path.splitext(p)[1].lower() in exts
     )
-    return [(p, 0.0) for p in paths]
+    return [(p, None) for p in paths]
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +169,7 @@ def load_and_resize(path: str, image_size: Tuple[int, int]) -> Optional[np.ndarr
 
 def run_inference(
     model_path: str,
-    pairs: List[Tuple[str, float]],
+    pairs: List[Tuple[str, Optional[float]]],
     image_size: Tuple[int, int],
     sequence_length: int = 5,
     output_dir: Optional[str] = None,
@@ -212,7 +217,7 @@ def run_inference(
         annotated = draw_steering_angle(img, pred_angle, lane_change=lane_change_active)
 
         # Print ground-truth comparison when available
-        if gt_angle != 0.0:
+        if gt_angle is not None:
             print(
                 f"Frame {frame_idx:05d} | "
                 f"GT: {gt_angle:+.4f}  Pred: {pred_angle:+.4f}  "

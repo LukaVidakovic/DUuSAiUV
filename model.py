@@ -47,7 +47,7 @@ def build_cnn_lstm_model(
         image_shape:     (H, W, C) of each frame.
 
     Returns:
-        Compiled Keras Model.  Input shape: (batch, seq_len, H, W, C).
+        Uncompiled Keras Model.  Input shape: (batch, seq_len, H, W, C).
         Output shape: (batch, 1) — predicted steering angle.
     """
     inputs = layers.Input(shape=(sequence_length, *image_shape), name="frame_sequence")

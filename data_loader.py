@@ -9,12 +9,12 @@ directory as the CSV file) or by an absolute path already stored in the CSV.
 """
 
 import os
+import warnings
 from typing import Tuple, Optional
 
 import cv2
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from tensorflow.keras.utils import Sequence
 
 
@@ -46,12 +46,24 @@ def load_dataframe(csv_path: str) -> pd.DataFrame:
 def split_dataframe(
     df: pd.DataFrame,
     val_split: float = 0.2,
-    random_state: int = 42,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Split *df* into training and validation DataFrames."""
-    train_df, val_df = train_test_split(
-        df, test_size=val_split, random_state=random_state, shuffle=True
-    )
+    """Split *df* into training and validation DataFrames.
+
+    The split preserves the original temporal ordering of *df* by assigning
+    the first portion to the training set and the last portion to the
+    validation set, which helps avoid temporal data leakage when using
+    sequences of consecutive frames.
+    """
+    n_samples = len(df)
+    n_val = int(n_samples * val_split)
+
+    if n_val == 0:
+        train_df = df
+        val_df = df.iloc[0:0]
+    else:
+        train_df = df.iloc[:-n_val]
+        val_df = df.iloc[-n_val:]
+
     return train_df.reset_index(drop=True), val_df.reset_index(drop=True)
 
 
@@ -64,9 +76,12 @@ class SteeringSequence(Sequence):
 
     Each sample X has shape ``(sequence_length, H, W, C)``; y is a scalar
     steering angle.  Within a single call to ``__getitem__`` the sequence is
-    built from *consecutive rows* of the DataFrame.  After shuffling the
-    DataFrame indices the sequences remain temporally coherent within each
-    drawn window.
+    built from *consecutive rows* of the (optionally shuffled) DataFrame.
+    If the CSV contains multiple driving sessions/episodes, and no explicit
+    episode information is used to segment the data, a single sequence may
+    span an episode boundary and mix frames from different contexts.  If this
+    is undesirable, callers should pre-split the CSV by episode or construct
+    separate generators per session.
 
     Args:
         df:              Pandas DataFrame (already split into train/val).
@@ -112,6 +127,11 @@ class SteeringSequence(Sequence):
             self.cols = [col]
 
         # Valid end-indices: we need at least `sequence_length` preceding rows
+        if len(self.df) < sequence_length:
+            raise ValueError(
+                f"Dataset has only {len(self.df)} rows, but sequence_length={sequence_length}. "
+                "Provide more data or reduce sequence_length."
+            )
         self._end_indices = list(range(sequence_length - 1, len(self.df)))
 
     # ------------------------------------------------------------------
@@ -158,7 +178,7 @@ class SteeringSequence(Sequence):
         abs_path = _resolve_path(raw_path, self.data_dir)
         img = cv2.imread(abs_path)
         if img is None:
-            # Return a blank frame if the image cannot be read
+            warnings.warn(f"Could not read image: {abs_path}; using blank frame.")
             h, w = self.image_size
             return np.zeros((h, w, 3), dtype=np.uint8)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -185,7 +205,7 @@ def make_generators(
     image_size: Tuple[int, int] = (66, 200),
     camera: str = "center",
     val_split: float = 0.2,
-):
+) -> Tuple["SteeringSequence", "SteeringSequence"]:
     """Return (train_gen, val_gen) ready for ``model.fit``."""
     if data_dir is None:
         data_dir = os.path.dirname(os.path.abspath(csv_path))

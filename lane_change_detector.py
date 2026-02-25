@@ -1,17 +1,16 @@
 """
-Lane-change detector based on a rolling window of predicted steering angles.
+Lane-change detector based on a sequence of predicted steering angles.
 
 Detection heuristic
 -------------------
-A lane change is triggered when the *mean* absolute steering angle over a
-sliding window of recent predictions exceeds ``threshold`` **and** the
-direction changes (i.e. a significant positive peak is followed by a
-significant negative peak or vice-versa, which is characteristic of a full
-lane-change manoeuvre).
+A lane change is triggered when the instantaneous absolute steering angle
+exceeds ``threshold`` for at least ``min_hold_frames`` consecutive frames.
+This sustained deviation from straight-ahead driving is characteristic of a
+lane-change manoeuvre.
 
-For simpler use-cases a second, lighter mode is also provided: a change is
-signalled whenever the rolling mean absolute angle stays above ``threshold``
-for at least ``min_hold_frames`` consecutive frames.
+A ``cooldown_frames`` counter prevents repeated triggers during the same
+manoeuvre: after an event fires, no new event is raised for the configured
+number of frames.
 """
 
 from collections import deque
@@ -21,8 +20,19 @@ from typing import Optional
 class LaneChangeDetector:
     """Stateful detector that consumes one steering angle at a time.
 
+    A lane-change event is fired when the instantaneous absolute steering
+    angle exceeds *threshold* for at least *min_hold_frames* consecutive
+    frames.  After an event fires, a *cooldown_frames* counter suppresses
+    further events so a single manoeuvre does not trigger repeatedly.
+
+    A rolling buffer of the last *window_size* angles is maintained and
+    exposed via the :attr:`rolling_mean` property for external inspection
+    (e.g. dashboards or logging), but is not used in the detection logic
+    itself.
+
     Args:
-        window_size:      Number of recent angles kept in the rolling buffer.
+        window_size:      Size of the rolling history buffer (for
+                          :attr:`rolling_mean` only).
         threshold:        Absolute-angle level (0-1) that, when sustained,
                           indicates a lane change.  Typical value: 0.15-0.30.
         min_hold_frames:  Minimum number of consecutive above-threshold frames
