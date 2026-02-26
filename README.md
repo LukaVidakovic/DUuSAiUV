@@ -17,6 +17,11 @@ from the predicted angle history with a visual warning overlay.
 ├── lane_change_detector.py# Stateful lane-change detector
 ├── train.py               # Training script with data balancing (CLI)
 ├── predict.py             # Inference + visualisation script (CLI)
+├── evaluate.py            # Offline evaluation + metrics export (CLI)
+├── run_all.sh             # One-command pipeline (train+evaluate+predict)
+├── tests/                 # Unit tests for lane-change logic
+│   └── test_lane_change_detector.py
+├── artifacts/             # Generated evaluation artifacts (JSON/CSV/frames)
 ├── requirements.txt       # Python dependencies
 ├── data/                  # Dataset directory (not in git)
 │   ├── self_driving_car_dataset_make/
@@ -125,6 +130,30 @@ Training stops early if validation loss does not improve for 5 epochs.
 
 ---
 
+## One-command run
+
+Run full pipeline (train + evaluate + render annotated frames):
+
+```bash
+bash run_all.sh --dataset make
+```
+
+Quick checks:
+
+```bash
+bash run_all.sh --dataset make --epochs 5 --eval_max_frames 1500 --pred_max_frames 400
+```
+
+Reuse existing model (skip train):
+
+```bash
+bash run_all.sh --dataset make --skip_train --model artifacts/steering_model_make.keras
+```
+
+All outputs are written under `artifacts/run_<timestamp>_<dataset>/`.
+
+---
+
 ## Inference & visualisation
 
 ```bash
@@ -160,8 +189,13 @@ Key options:
 | `--csv` / `--image_dir` | *(one required)* | Image source |
 | `--seq_len` | `5` | Must match the trained model (use 3 for best model) |
 | `--output_dir` | `None` | Save annotated frames here |
+| `--max_frames` | `None` | Optional cap on source frames to process |
 | `--show` | `False` | Display frames in a window (press **Q** to quit) |
 | `--lane_threshold` | `0.2` | Abs-angle threshold for lane-change detection |
+| `--lane_min_hold_frames` | `5` | Consecutive frames over threshold for candidate start |
+| `--lane_settle_threshold` | `0.08` | Angle considered settled (near straight) |
+| `--lane_max_settle_frames` | `25` | Max frames to confirm candidate |
+| `--lane_cooldown_frames` | `20` | Frames to suppress repeated events |
 
 ---
 
@@ -194,10 +228,58 @@ LSTM(64)
 ## Lane-change detection
 
 `LaneChangeDetector` keeps a rolling window of recent steering angles.
-A **lane-change event** is fired when the absolute angle exceeds
-`threshold` (default 0.2) for at least `min_hold_frames` (default 5)
-consecutive frames.  A `cooldown_frames` (default 20) counter prevents
-repeated triggers during the same manoeuvre.
+A **lane-change event** is fired using a two-stage heuristic:
+
+1. **Candidate start:** `abs(angle)` exceeds `threshold` for at least
+   `min_hold_frames` consecutive frames with the same steering sign.
+2. **Confirmation:** within `max_settle_frames`, steering either returns near
+   straight (`abs(angle) <= settle_threshold`) or shows opposite-sign
+   counter-steer.
+
+This reduces false positives on long constant curves compared to a pure
+threshold detector. A `cooldown_frames` counter prevents repeated triggers
+during the same manoeuvre.
 
 The visual warning (red border + text banner) is displayed for 30 frames
 after the event fires.
+
+---
+
+## Evaluation & Artifacts
+
+Generate objective metrics and submission artifacts:
+
+```bash
+python evaluate.py \
+    --model steering_model.keras \
+    --csv data/self_driving_car_dataset_make/driving_log.csv \
+    --data_dir data/self_driving_car_dataset_make/IMG \
+    --seq_len 3 \
+    --output_json artifacts/evaluation_metrics.json \
+    --output_csv artifacts/frame_predictions.csv
+```
+
+Output files:
+- `artifacts/evaluation_metrics.json` (aggregate steering + lane metrics)
+- `artifacts/frame_predictions.csv` (per-frame GT/prediction/error/events)
+
+To generate visual artifact frames for review:
+
+```bash
+python predict.py \
+    --model steering_model.keras \
+    --csv data/self_driving_car_dataset_make/driving_log.csv \
+    --data_dir data/self_driving_car_dataset_make/IMG \
+    --seq_len 3 \
+    --output_dir artifacts/output_frames
+```
+
+---
+
+## Testing
+
+Run unit tests for lane-change detection:
+
+```bash
+python -m unittest discover -s tests -p "test_*.py" -v
+```
