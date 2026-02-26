@@ -46,6 +46,7 @@ from lane_change_detector import LaneChangeDetector
 def draw_steering_angle(
     frame: np.ndarray,
     angle: float,
+    gt_angle: Optional[float] = None,
     lane_change: bool = False,
 ) -> np.ndarray:
     """Return a copy of *frame* with steering indicator and optional warning.
@@ -53,58 +54,111 @@ def draw_steering_angle(
     Visual elements
     ---------------
     * Numeric steering angle (top-left corner).
+    * Ground truth angle if provided (below prediction).
     * Steering-wheel icon (circle + needle) at the bottom-centre.
     * Red border + "⚠ LANE CHANGE" banner when *lane_change* is True.
     """
     out = frame.copy()
     h, w = out.shape[:2]
+    
+    # Scale up the frame significantly for better visibility
+    scale = 3.0
+    out = cv2.resize(out, (int(w * scale), int(h * scale)))
+    h, w = out.shape[:2]
 
     # ------------------------------------------------------------------
-    # 1. Numeric label
+    # 1. Info panel at the top with background
     # ------------------------------------------------------------------
-    label = f"Steering: {angle:+.3f}"
-    cv2.putText(
-        out, label, (10, 32),
-        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 230, 0), 2, cv2.LINE_AA,
-    )
+    panel_height = 250
+    panel = np.zeros((panel_height, w, 3), dtype=np.uint8)
+    panel[:] = (40, 40, 40)  # Dark gray background
+    
+    font_scale = 1.5
+    thickness = 3
+    y_offset = 60
+    
+    # Prediction
+    pred_text = f"Prediction: {angle:+.4f}"
+    cv2.putText(panel, pred_text, (30, y_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), thickness, cv2.LINE_AA)
+    
+    # Ground truth
+    if gt_angle is not None:
+        y_offset += 70
+        gt_text = f"Ground Truth: {gt_angle:+.4f}"
+        cv2.putText(panel, gt_text, (30, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 0), thickness, cv2.LINE_AA)
+        
+        # Error
+        y_offset += 70
+        error = abs(angle - gt_angle)
+        err_text = f"Error: {error:.4f}"
+        color = (0, 255, 255) if error < 0.1 else (0, 150, 255) if error < 0.2 else (0, 50, 255)
+        cv2.putText(panel, err_text, (30, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness, cv2.LINE_AA)
+    
+    # Combine panel with frame
+    out = np.vstack([panel, out])
+    h, w = out.shape[:2]
 
     # ------------------------------------------------------------------
-    # 2. Steering-wheel icon
+    # 2. Large steering-wheel icon at bottom
     # ------------------------------------------------------------------
-    cx, cy = w // 2, h - 50
-    radius = 35
-    cv2.circle(out, (cx, cy), radius, (220, 220, 220), 2, cv2.LINE_AA)
-    # Needle points in the direction of the steering angle
-    # angle = 0 → needle points up; angle = ±1 → needle at ±90°
+    cx, cy = w // 2, h - 150
+    radius = 100
+    
+    # Outer circle
+    cv2.circle(out, (cx, cy), radius, (200, 200, 200), 5, cv2.LINE_AA)
+    
+    # Prediction needle (green)
     needle_rad = angle * math.pi / 2.0
-    nx = int(cx + radius * math.sin(needle_rad))
-    ny = int(cy - radius * math.cos(needle_rad))
-    cv2.line(out, (cx, cy), (nx, ny), (0, 230, 0), 3, cv2.LINE_AA)
-    cv2.circle(out, (cx, cy), 4, (0, 230, 0), -1, cv2.LINE_AA)
+    nx = int(cx + radius * 0.85 * math.sin(needle_rad))
+    ny = int(cy - radius * 0.85 * math.cos(needle_rad))
+    cv2.line(out, (cx, cy), (nx, ny), (0, 255, 0), 8, cv2.LINE_AA)
+    cv2.circle(out, (cx, cy), 12, (0, 255, 0), -1, cv2.LINE_AA)
+    
+    # GT needle (yellow, thinner)
+    if gt_angle is not None:
+        gt_needle_rad = gt_angle * math.pi / 2.0
+        gt_nx = int(cx + radius * 0.85 * math.sin(gt_needle_rad))
+        gt_ny = int(cy - radius * 0.85 * math.cos(gt_needle_rad))
+        cv2.line(out, (cx, cy), (gt_nx, gt_ny), (255, 255, 0), 5, cv2.LINE_AA)
+    
+    # Center dot
+    cv2.circle(out, (cx, cy), 8, (255, 255, 255), -1, cv2.LINE_AA)
+    
+    # Labels below wheel
+    cv2.putText(out, "Green: Prediction", (cx - 200, cy + 140),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2, cv2.LINE_AA)
+    if gt_angle is not None:
+        cv2.putText(out, "Yellow: Ground Truth", (cx - 200, cy + 180),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 0), 2, cv2.LINE_AA)
 
     # ------------------------------------------------------------------
-    # 3. Lane-change warning (visual)
+    # 3. Lane-change warning
     # ------------------------------------------------------------------
     if lane_change:
         # Red border
-        cv2.rectangle(out, (0, 0), (w - 1, h - 1), (0, 0, 255), 6)
+        cv2.rectangle(out, (0, 0), (w - 1, h - 1), (0, 0, 255), 15)
+        
         # Warning banner
-        banner_text = "! LANE CHANGE !"
-        font_scale = max(0.6, w / 640)
+        banner_text = "!!! LANE CHANGE !!!"
+        font_scale_banner = 2.5
         (tw, th), _ = cv2.getTextSize(
-            banner_text, cv2.FONT_HERSHEY_DUPLEX, font_scale, 2
+            banner_text, cv2.FONT_HERSHEY_DUPLEX, font_scale_banner, 5
         )
         bx = (w - tw) // 2
-        by = 70
-        # Semi-transparent background for readability
+        by = panel_height + 100
+        
+        # Background
         overlay = out.copy()
-        cv2.rectangle(overlay, (bx - 8, by - th - 8), (bx + tw + 8, by + 8),
+        cv2.rectangle(overlay, (bx - 20, by - th - 20), (bx + tw + 20, by + 20),
                       (0, 0, 0), -1)
-        cv2.addWeighted(overlay, 0.5, out, 0.5, 0, out)
-        cv2.putText(
-            out, banner_text, (bx, by),
-            cv2.FONT_HERSHEY_DUPLEX, font_scale, (0, 50, 255), 2, cv2.LINE_AA,
-        )
+        cv2.addWeighted(overlay, 0.7, out, 0.3, 0, out)
+        
+        # Text
+        cv2.putText(out, banner_text, (bx, by),
+                    cv2.FONT_HERSHEY_DUPLEX, font_scale_banner, (0, 50, 255), 5, cv2.LINE_AA)
 
     return out
 
@@ -119,16 +173,17 @@ def _image_paths_from_csv(
     camera: str = "center",
 ) -> List[Tuple[str, Optional[float]]]:
     """Return list of (image_path, ground_truth_angle) from a CSV file."""
-    df = pd.read_csv(csv_path)
-    df.columns = [c.strip() for c in df.columns]
+    df = pd.read_csv(csv_path, header=None, names=["centercam", "leftcam", "rightcam", "steering_angle", "throttle", "reverse", "speed"])
     col_map = {"center": "centercam", "left": "leftcam", "right": "rightcam"}
     img_col = col_map.get(camera, "centercam")
 
     pairs: List[Tuple[str, Optional[float]]] = []
     for _, row in df.iterrows():
         raw = str(row[img_col]).strip()
-        path = raw if (os.path.isabs(raw) and os.path.exists(raw)) \
-               else os.path.join(data_dir, raw)
+        # Extract just the filename from Windows paths
+        if '\\' in raw or 'self_driving_car_dataset' in raw:
+            raw = raw.replace('\\', '/').split('/')[-1]
+        path = os.path.join(data_dir, raw)
         gt: Optional[float] = float(row["steering_angle"])
         pairs.append((path, gt))
     return pairs
@@ -214,7 +269,7 @@ def run_inference(
         if lane_change_frames > 0:
             lane_change_frames -= 1
 
-        annotated = draw_steering_angle(img, pred_angle, lane_change=lane_change_active)
+        annotated = draw_steering_angle(img, pred_angle, gt_angle=gt_angle, lane_change=lane_change_active)
 
         # Print ground-truth comparison when available
         if gt_angle is not None:

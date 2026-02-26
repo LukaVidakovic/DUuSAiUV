@@ -1,147 +1,108 @@
 """
-Training script for the CNN+LSTM steering angle model.
-
-Usage example
--------------
-    python train.py \\
-        --csv  /data/driving_log.csv \\
-        --data_dir /data/IMG \\
-        --model steering_model.keras \\
-        --epochs 15 \\
-        --batch_size 32 \\
-        --seq_len 5 \\
-        --camera center
+Improved training with data augmentation and balancing.
 """
-
 import argparse
+import pandas as pd
+import numpy as np
 import os
-
-import tensorflow as tf
-
-from data_loader import make_generators
+from tensorflow import keras
 from model import build_cnn_lstm_model
+from data_loader import SteeringSequence, load_dataframe
 
+def balance_dataset(df: pd.DataFrame, zero_fraction: float = 0.1) -> pd.DataFrame:
+    """Balance dataset by reducing zero steering angles."""
+    zero_df = df[df["steering_angle"] == 0.0].sample(frac=zero_fraction, random_state=42)
+    non_zero_df = df[df["steering_angle"] != 0.0]
+    
+    # Add flipped images for non-zero angles
+    flipped_rows = []
+    for _, row in non_zero_df.iterrows():
+        flipped_row = row.copy()
+        # Mark as flipped (will be handled in data loader)
+        flipped_row["centercam"] = row["centercam"] + "|FLIP"
+        flipped_row["steering_angle"] = -row["steering_angle"]
+        flipped_rows.append(flipped_row)
+    
+    flipped_df = pd.DataFrame(flipped_rows)
+    balanced_df = pd.concat([zero_df, non_zero_df, flipped_df], ignore_index=True)
+    
+    print(f"Original dataset: {len(df)} samples")
+    print(f"  Zero angles: {len(df[df['steering_angle'] == 0.0])}")
+    print(f"  Non-zero angles: {len(df[df['steering_angle'] != 0.0])}")
+    print(f"Balanced dataset: {len(balanced_df)} samples")
+    print(f"  Zero angles: {len(balanced_df[balanced_df['steering_angle'] == 0.0])}")
+    print(f"  Non-zero angles: {len(balanced_df[balanced_df['steering_angle'] != 0.0])}")
+    
+    return balanced_df.sample(frac=1.0, random_state=42).reset_index(drop=True)
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Train the CNN+LSTM steering angle model."
-    )
-    parser.add_argument(
-        "--csv", required=True,
-        help="Path to the dataset CSV file (driving_log.csv).",
-    )
-    parser.add_argument(
-        "--data_dir", default=None,
-        help=(
-            "Base directory for image files referenced in the CSV.  "
-            "Defaults to the directory containing the CSV file."
-        ),
-    )
-    parser.add_argument(
-        "--model", default="steering_model.keras",
-        help="Output path for the saved model (default: steering_model.keras).",
-    )
-    parser.add_argument("--epochs",      type=int,   default=10)
-    parser.add_argument("--batch_size",  type=int,   default=32)
-    parser.add_argument("--seq_len",     type=int,   default=5,
-                        help="Number of consecutive frames per sample.")
-    parser.add_argument(
-        "--image_height", type=int, default=66,
-        help="Height to resize input images to (default: 66).",
-    )
-    parser.add_argument(
-        "--image_width", type=int, default=200,
-        help="Width to resize input images to (default: 200).",
-    )
-    parser.add_argument(
-        "--camera", default="center",
-        choices=["center", "left", "right", "all"],
-        help="Which camera(s) to use for training.",
-    )
-    parser.add_argument(
-        "--val_split", type=float, default=0.2,
-        help="Fraction of data to use for validation.",
-    )
-    parser.add_argument(
-        "--lr", type=float, default=1e-3,
-        help="Initial learning rate for the Adam optimiser.",
-    )
-    return parser.parse_args()
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--csv", required=True)
+    parser.add_argument("--data_dir", required=True)
+    parser.add_argument("--model", default="steering_model_balanced.keras")
+    parser.add_argument("--epochs", type=int, default=15)
+    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--seq_len", type=int, default=5)
+    parser.add_argument("--val_split", type=float, default=0.2)
+    parser.add_argument("--zero_fraction", type=float, default=0.1)
+    args = parser.parse_args()
 
-
-def main() -> None:
-    args = parse_args()
-
-    image_size = (args.image_height, args.image_width)
-
-    # Adjust width if using all three cameras side-by-side
-    if args.camera == "all":
-        model_image_shape = (args.image_height, args.image_width * 3, 3)
-    else:
-        model_image_shape = (args.image_height, args.image_width, 3)
-
-    print("Building model …")
-    model = build_cnn_lstm_model(
-        sequence_length=args.seq_len,
-        image_shape=model_image_shape,
+    print("Loading and balancing data...")
+    df = load_dataframe(args.csv)
+    df = balance_dataset(df, args.zero_fraction)
+    
+    # Split
+    n_val = int(len(df) * args.val_split)
+    train_df = df.iloc[:-n_val].reset_index(drop=True)
+    val_df = df.iloc[-n_val:].reset_index(drop=True)
+    
+    # Create generators with augmentation
+    train_gen = SteeringSequence(
+        train_df, args.data_dir, args.seq_len, args.batch_size,
+        image_size=(66, 200), camera="center", augment=True
     )
+    val_gen = SteeringSequence(
+        val_df, args.data_dir, args.seq_len, args.batch_size,
+        image_size=(66, 200), camera="center", augment=False
+    )
+    
+    print(f"Training batches: {len(train_gen)}")
+    print(f"Validation batches: {len(val_gen)}")
+    
+    # Build model
+    print("Building model...")
+    model = build_cnn_lstm_model(sequence_length=args.seq_len)
+    
+    # Use Huber loss - more sensitive to large errors
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=args.lr),
-        loss="mse",
-        metrics=["mae"],
+        optimizer=keras.optimizers.Adam(learning_rate=1e-3),
+        loss=keras.losses.Huber(delta=0.1),  # Aggressive on large errors
+        metrics=["mae"]
     )
-    model.summary()
-
-    print("Loading data …")
-    train_gen, val_gen = make_generators(
-        csv_path=args.csv,
-        data_dir=args.data_dir,
-        sequence_length=args.seq_len,
-        batch_size=args.batch_size,
-        image_size=image_size,
-        camera=args.camera,
-        val_split=args.val_split,
-    )
-    print(f"  Training batches : {len(train_gen)}")
-    print(f"  Validation batches: {len(val_gen)}")
-
+    
+    # Callbacks
     callbacks = [
-        tf.keras.callbacks.ModelCheckpoint(
-            args.model,
-            monitor="val_loss",
-            save_best_only=True,
-            verbose=1,
+        keras.callbacks.ModelCheckpoint(
+            args.model, save_best_only=True, monitor="val_loss", verbose=1
         ),
-        tf.keras.callbacks.EarlyStopping(
-            monitor="val_loss",
-            patience=5,
-            restore_best_weights=True,
-            verbose=1,
+        keras.callbacks.EarlyStopping(
+            monitor="val_loss", patience=5, restore_best_weights=True, verbose=1
         ),
-        tf.keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss",
-            factor=0.5,
-            patience=3,
-            min_lr=1e-6,
-            verbose=1,
+        keras.callbacks.ReduceLROnPlateau(
+            monitor="val_loss", factor=0.5, patience=3, verbose=1, min_lr=1e-6
         ),
     ]
-
-    print("Training …")
-    history = model.fit(
+    
+    # Train
+    print("Training...")
+    model.fit(
         train_gen,
         validation_data=val_gen,
         epochs=args.epochs,
         callbacks=callbacks,
     )
-
-    # ModelCheckpoint already saved the best model during training
+    
     print(f"Best model saved to: {os.path.abspath(args.model)}")
-
-    # Print training summary
-    best_val_loss = min(history.history.get("val_loss", [float("inf")]))
-    print(f"Best validation loss (MSE): {best_val_loss:.6f}")
-
 
 if __name__ == "__main__":
     main()

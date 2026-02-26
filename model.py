@@ -12,7 +12,7 @@ from tensorflow.keras import layers, Model
 
 
 def build_cnn_extractor(image_shape: tuple) -> Model:
-    """Small CNN feature extractor applied to each frame (NVIDIA-inspired).
+    """Small CNN feature extractor applied to each frame (VGG-inspired).
 
     Args:
         image_shape: (H, W, C) of a single input frame.
@@ -21,17 +21,34 @@ def build_cnn_extractor(image_shape: tuple) -> Model:
         A Keras Model that maps (H, W, C) → flat feature vector.
     """
     inputs = layers.Input(shape=image_shape)
-    # Normalise to [-1, 1]
-    x = layers.Rescaling(scale=1.0 / 127.5, offset=-1.0)(inputs)
+    
+    # Data augmentation
+    x = layers.RandomContrast(0.3)(inputs)
+    x = layers.Rescaling(scale=1.0 / 255.0)(x)
 
-    x = layers.Conv2D(24, (5, 5), strides=(2, 2), activation="elu", padding="valid")(x)
-    x = layers.Conv2D(36, (5, 5), strides=(2, 2), activation="elu", padding="valid")(x)
-    x = layers.Conv2D(48, (5, 5), strides=(2, 2), activation="elu", padding="valid")(x)
-    x = layers.Conv2D(64, (3, 3), activation="elu", padding="valid")(x)
-    x = layers.Conv2D(64, (3, 3), activation="elu", padding="valid")(x)
+    # Conv block 1
+    x = layers.Conv2D(16, (3, 3), padding="same", activation="relu")(x)
+    x = layers.MaxPooling2D()(x)
+    x = layers.BatchNormalization()(x)
+    
+    # Conv block 2
+    x = layers.Conv2D(32, (3, 3), padding="same", activation="relu")(x)
+    x = layers.MaxPooling2D()(x)
+    x = layers.BatchNormalization()(x)
+    
+    # Conv block 3
+    x = layers.Conv2D(64, (3, 3), padding="same", activation="relu")(x)
+    x = layers.MaxPooling2D()(x)
+    x = layers.BatchNormalization()(x)
+    
+    # Conv block 4
+    x = layers.Conv2D(128, (3, 3), padding="same", activation="relu")(x)
+    x = layers.MaxPooling2D()(x)
+    x = layers.BatchNormalization()(x)
 
     x = layers.Flatten()(x)
-    x = layers.Dense(100, activation="elu")(x)
+    x = layers.Dropout(0.4)(x)
+    x = layers.Dense(128, activation="relu")(x)
 
     return Model(inputs, x, name="cnn_extractor")
 
@@ -55,10 +72,12 @@ def build_cnn_lstm_model(
     cnn = build_cnn_extractor(image_shape)
     x = layers.TimeDistributed(cnn, name="time_distributed_cnn")(inputs)
 
+    # Simplified LSTM - single layer with less dropout
     x = layers.LSTM(64, return_sequences=False, name="lstm")(x)
-    x = layers.Dropout(0.2)(x)
-    x = layers.Dense(50, activation="elu")(x)
-    x = layers.Dense(10, activation="elu")(x)
+    x = layers.Dropout(0.2)(x)  # Reduced from 0.4
+    
+    # Simplified dense head
+    x = layers.Dense(128, activation="relu")(x)
     outputs = layers.Dense(1, name="steering_angle")(x)
 
     model = Model(inputs, outputs, name="cnn_lstm_steering")

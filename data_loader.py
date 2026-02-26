@@ -29,16 +29,20 @@ def _resolve_path(raw: str, data_dir: str) -> str:
     Otherwise it is joined with *data_dir*.
     """
     raw = raw.strip()
-    if os.path.isabs(raw) and os.path.exists(raw):
-        return raw
+    # Remove flip marker if present
+    raw = raw.replace("|FLIP", "")
+    
+    # Extract just the filename from Windows paths
+    if '\\' in raw or 'self_driving_car_dataset' in raw:
+        # Split by backslash and get the last part (filename)
+        raw = raw.replace('\\', '/').split('/')[-1]
+    
     return os.path.join(data_dir, raw)
 
 
 def load_dataframe(csv_path: str) -> pd.DataFrame:
     """Read the dataset CSV and return a cleaned DataFrame."""
-    df = pd.read_csv(csv_path)
-    # Normalise column names (strip whitespace)
-    df.columns = [c.strip() for c in df.columns]
+    df = pd.read_csv(csv_path, header=None, names=["centercam", "leftcam", "rightcam", "steering_angle", "throttle", "reverse", "speed"])
     df = df.dropna(subset=["steering_angle"]).reset_index(drop=True)
     return df
 
@@ -164,11 +168,20 @@ class SteeringSequence(Sequence):
 
     def _load_frame(self, row_idx: int) -> np.ndarray:
         """Load, resize (and optionally augment) the frame at *row_idx*."""
+        # Check if this is a flipped image
+        cam_path = str(self.df.loc[row_idx, self.cols[0]])
+        should_flip = "|FLIP" in cam_path
+        
         if self.camera == "all":
             imgs = [self._read_image(row_idx, col) for col in self.cols]
             img = np.concatenate(imgs, axis=1)  # side-by-side → (H, 3*W, C)
         else:
             img = self._read_image(row_idx, self.cols[0])
+        
+        # Apply flip if marked
+        if should_flip:
+            img = cv2.flip(img, 1)
+        
         if self.augment:
             img = self._random_brightness(img)
         return img
