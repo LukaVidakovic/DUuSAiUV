@@ -115,12 +115,21 @@ The training script automatically:
 ### Training Results
 
 **Make dataset** (recommended):
+
+**VGG-like architecture (best accuracy):**
 - Training samples: ~2000 (after balancing)
 - Best validation MAE: **0.122** (~7.0° error)
+- Full dataset MAE: **0.100** (~5.7° error)
 - Training time: ~7s per epoch on M-series Mac
 - Configuration: seq_len=3, Huber loss (delta=0.1), dropout=0.2
 
-**Jungle dataset**:
+**Hybrid architecture (5×5 → 3×3 kernels, faster training):**
+- Best validation MAE: **0.125** (~7.2° error)
+- Full dataset MAE: **0.110** (~6.3° error)
+- Training time: ~5s per epoch on M-series Mac (30% faster)
+- Configuration: seq_len=3, Huber loss (delta=0.1), dropout=0.2
+
+**Jungle dataset:**
 - Training samples: ~4000 (after balancing)
 - Best validation MAE: **0.231** (~13.2° error)
 - Configuration: seq_len=5, MAE loss
