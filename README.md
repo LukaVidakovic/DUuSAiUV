@@ -17,17 +17,62 @@ pip install -r requirements.txt
 # 2. Download dataset (see Dataset Setup section)
 
 # 3. Run complete pipeline (train + evaluate + visualize)
-./run_all.sh --dataset make --show
+./run_all.sh --dataset make --architecture deep --show
 ```
 
 This single command will:
 
-- Train the model (~2 minutes)
+- Train the deep model (~2 minutes)
 - Evaluate on full dataset
 - Generate annotated frames with visualization
 - Display results in window (press Q to exit)
 
-All results saved to `artifacts/run_<timestamp>_make/`
+All results saved to `artifacts/run_<timestamp>_make_deep/`
+
+---
+
+## 🎓 For Project Presentation / Defense
+
+### Run All Models with Full Visualization
+
+**Best Model (Deep - Recommended for presentation):**
+```bash
+# Make dataset with Deep model (best accuracy)
+./run_all.sh --dataset make --architecture deep --show
+
+# Jungle dataset with Deep model
+./run_all.sh --dataset jungle --architecture deep --show
+```
+
+**Alternative Models (for comparison):**
+```bash
+# VGG-like model (good balance)
+./run_all.sh --dataset make --architecture vgg --show
+
+# Hybrid model (fastest training)
+./run_all.sh --dataset make --architecture hybrid --show
+```
+
+### Quick Demo (Limited Frames)
+```bash
+# Fast demo with 200 frames for presentation
+./run_all.sh --dataset make --architecture deep --pred_max_frames 200 --show
+```
+
+### Use Pre-trained Models (Skip Training)
+```bash
+# Deep model
+./run_all.sh --dataset make --architecture deep \
+    --skip_train --model steering_model_make_deep.keras --show
+
+# VGG-like model
+./run_all.sh --dataset make --architecture vgg \
+    --skip_train --model steering_model_make_huber.keras --show
+
+# Hybrid model
+./run_all.sh --dataset make --architecture hybrid \
+    --skip_train --model steering_model_make_hybrid.keras --show
+```
 
 ---
 
@@ -256,9 +301,10 @@ The **easiest and recommended way** to run the entire project:
 
 Options:
   --dataset make|jungle      Dataset preset (default: make)
+  --architecture vgg|hybrid|deep  Model architecture (default: vgg)
   --csv PATH                 Override CSV path
   --data_dir PATH            Override IMG directory path
-  --run_name NAME            Artifact run folder name (default: timestamp_dataset)
+  --run_name NAME            Artifact run folder name (default: timestamp_dataset_arch)
   --model PATH               Model path (output if training; input if --skip_train)
   --python PATH              Python executable (default: auto-detect venv)
   --epochs N                 Training epochs (default: 20)
@@ -393,25 +439,32 @@ LSTM(64)
 
 ### Model Comparison
 
-| Model                | Val MAE   | Full MAE  | Improvement  | Speed      |
-| -------------------- | --------- | --------- | ------------ | ---------- |
-| Baseline (original)  | 0.289     | -         | -            | -          |
-| Improved v2          | 0.259     | -         | +10.4%       | -          |
-| Balanced             | 0.231     | -         | +20.1%       | -          |
-| **VGG-like (Final)** | **0.122** | **0.100** | **+57.8%** ✅ | 7s/epoch   |
-| Hybrid (5×5→3×3)     | 0.125     | 0.110     | +56.7%       | 5s/epoch ⚡ |
+| Model | Val MAE | Full MAE | Correlation | R² | Improvement | Speed |
+|-------|---------|----------|-------------|-----|-------------|-------|
+| Baseline (original) | 0.289 | - | - | - | - | - |
+| Improved v2 | 0.259 | - | - | - | +10.4% | - |
+| Balanced | 0.231 | - | - | - | +20.1% | - |
+| **Deep (2×LSTM)** | **0.124** | **0.098** | **0.524** | **0.159** | **+66.1%** ✅ | 7s/epoch |
+| VGG-like | 0.122 | 0.100 | 0.490 | 0.061 | +57.8% | 7s/epoch |
+| Hybrid (5×5→3×3) | 0.125 | 0.110 | 0.478 | -0.057 | +56.7% | 5s/epoch ⚡ |
 
 ### When to Use Which Model
 
-**VGG-like:**
+**Deep (2×LSTM) - BEST OVERALL:**
+- ✅ **Best accuracy** (0.098 MAE)
+- ✅ **Best correlation** (0.524)
+- ✅ **Best R²** (0.159)
+- ✅ **Best temporal modeling** (stacked LSTM)
+- ✅ **Production deployment**
+- 📌 **Recommended for final submission**
 
-- ✅ Production deployment
-- ✅ Best accuracy (0.100 MAE)
-- ✅ Best generalization
-- ✅ Most stable results
+**VGG-like:**
+- ✅ Good accuracy (0.100 MAE)
+- ✅ Good generalization
+- ✅ Stable results
+- ✅ Simpler architecture
 
 **Hybrid:**
-
 - ✅ Fast prototyping and iterations
 - ✅ 30% faster training
 - ✅ Similar performance (difference ~1°)

@@ -13,9 +13,10 @@ Usage:
 
 Options:
   --dataset make|jungle      Dataset preset (default: make)
+  --architecture vgg|hybrid|deep  Model architecture (default: vgg)
   --csv PATH                 Override CSV path
   --data_dir PATH            Override IMG directory path
-  --run_name NAME            Artifact run folder name (default: timestamp_dataset)
+  --run_name NAME            Artifact run folder name (default: timestamp_dataset_arch)
   --model PATH               Model path (output if training; input if --skip_train)
   --python PATH              Python executable (default: .venv/bin/python if present)
   --epochs N                 Training epochs (default: 20)
@@ -32,6 +33,7 @@ EOF
 }
 
 DATASET="make"
+ARCHITECTURE="vgg"
 CSV_PATH=""
 DATA_DIR=""
 RUN_NAME=""
@@ -50,6 +52,7 @@ SKIP_PREDICT=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dataset) DATASET="${2:-}"; shift 2 ;;
+    --architecture) ARCHITECTURE="${2:-}"; shift 2 ;;
     --csv) CSV_PATH="${2:-}"; shift 2 ;;
     --data_dir) DATA_DIR="${2:-}"; shift 2 ;;
     --run_name) RUN_NAME="${2:-}"; shift 2 ;;
@@ -114,7 +117,7 @@ if [[ ! -d "$DATA_DIR" ]]; then
 fi
 
 if [[ -z "$RUN_NAME" ]]; then
-  RUN_NAME="$(date +%Y%m%d_%H%M%S)_${DATASET}"
+  RUN_NAME="$(date +%Y%m%d_%H%M%S)_${DATASET}_${ARCHITECTURE}"
 fi
 
 RUN_DIR="artifacts/run_${RUN_NAME}"
@@ -123,6 +126,23 @@ mkdir -p "$RUN_DIR"
 if [[ -z "$MODEL_PATH" ]]; then
   MODEL_PATH="${RUN_DIR}/steering_model.keras"
 fi
+
+# Select training script based on architecture
+case "$ARCHITECTURE" in
+  vgg)
+    TRAIN_SCRIPT="train.py"
+    ;;
+  hybrid)
+    TRAIN_SCRIPT="train_hybrid.py"
+    ;;
+  deep)
+    TRAIN_SCRIPT="train_deep.py"
+    ;;
+  *)
+    echo "Unsupported --architecture '$ARCHITECTURE'. Use vgg, hybrid, or deep." >&2
+    exit 1
+    ;;
+esac
 
 METRICS_JSON="${RUN_DIR}/evaluation_metrics.json"
 PRED_CSV="${RUN_DIR}/frame_predictions.csv"
@@ -136,6 +156,7 @@ run_cmd() {
 echo "============================================================"
 echo "DUuSAiUV pipeline"
 echo "Python:        $PYTHON_BIN"
+echo "Architecture:  $ARCHITECTURE"
 echo "Dataset:       $DATASET"
 echo "CSV:           $CSV_PATH"
 echo "Data dir:      $DATA_DIR"
@@ -145,7 +166,7 @@ echo "Sequence len:  $SEQ_LEN"
 echo "============================================================"
 
 if [[ "$SKIP_TRAIN" -eq 0 ]]; then
-  run_cmd "$PYTHON_BIN" train.py \
+  run_cmd "$PYTHON_BIN" "$TRAIN_SCRIPT" \
     --csv "$CSV_PATH" \
     --data_dir "$DATA_DIR" \
     --model "$MODEL_PATH" \
