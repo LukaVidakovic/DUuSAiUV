@@ -331,7 +331,33 @@ artifacts/run_<timestamp>_<dataset>_<arch>/
 
 ## Architecture
 
-### VGG-like CNN + LSTM (Production Model)
+### Deep CNN + 2×LSTM (Best Model)
+
+```
+Input: (batch, seq_len, 66, 200, 3)
+         │
+TimeDistributed
+  └─ CNN (VGG-inspired)
+       RandomContrast(0.3)
+       Rescaling(1/255)
+       Conv2D 16×3×3 → ReLU → MaxPool → BatchNorm
+       Conv2D 32×3×3 → ReLU → MaxPool → BatchNorm
+       Conv2D 64×3×3 → ReLU → MaxPool → BatchNorm
+       Conv2D 128×3×3 → ReLU → MaxPool → BatchNorm
+       Flatten → Dropout(0.4)
+       Dense(128) → ReLU
+         │
+LSTM(64, return_sequences=True)  ← First LSTM layer
+  └─ Dropout(0.2)
+     LSTM(64, return_sequences=False)  ← Second LSTM layer
+       └─ Dropout(0.2)
+          Dense(128) → ReLU
+          Dense(1)  → steering angle ∈ [−1, 1]
+```
+
+**Total parameters:** ~976K (3.7 MB)
+
+### VGG-like CNN + LSTM (Good Balance)
 
 ```
 Input: (batch, seq_len, 66, 200, 3)
@@ -415,13 +441,31 @@ LSTM(64)
 
 ### Jungle Dataset
 
-**VGG-like architecture (best accuracy):**
+**Deep model (2×LSTM, best overall):**
+- Training samples: ~4000 (after balancing)
+- Best validation MAE: **0.167** (~9.6° error)
+- Full dataset MAE: **0.188** (~10.8° error)
+- Training time: ~14s per epoch on M-series Mac
+- Configuration: seq_len=3, Huber loss (delta=0.1), 2 stacked LSTM layers
+- Correlation: **0.844** (excellent temporal modeling)
+- R²: **0.707** (best predictive power)
+
+**VGG-like architecture (good accuracy):**
 - Training samples: ~4000 (after balancing)
 - Best validation MAE: **0.174** (~10.0° error)
 - Full dataset MAE: **0.209** (~12.0° error)
 - Training time: ~14s per epoch on M-series Mac
 - Configuration: seq_len=3, Huber loss (delta=0.1), dropout=0.2
 - Correlation: **0.812** (excellent temporal modeling)
+- R²: **0.642** (good predictive power)
+
+**Hybrid architecture (faster training):**
+- Best validation MAE: **0.172** (~9.9° error)
+- Full dataset MAE: **0.238** (~13.6° error)
+- Training time: ~11s per epoch (21% faster)
+- Configuration: seq_len=3, Huber loss (delta=0.1), dropout=0.2
+- Correlation: **0.788** (good temporal modeling)
+- R²: **0.560** (decent predictive power)
 - R²: **0.642** (good predictive power)
 
 **Hybrid architecture (faster training):**
