@@ -209,3 +209,7 @@ data/
 *.keras
 artifacts/*
 !artifacts/.gitkeep
+
+# Documentation (keep only README)
+*.md
+!README.md
