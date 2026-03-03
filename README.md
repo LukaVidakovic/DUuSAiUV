@@ -344,6 +344,15 @@ LSTM(64)
 
 ### Make Dataset (Recommended)
 
+**Deep model (2×LSTM, best overall):**
+- Training samples: ~2000 (after balancing)
+- Best validation MAE: **0.124** (~7.1° error)
+- Full dataset MAE: **0.098** (~5.6° error)
+- Training time: ~7s per epoch on M-series Mac
+- Configuration: seq_len=3, Huber loss (delta=0.1), 2 stacked LSTM layers
+- Correlation: **0.524** (best temporal modeling)
+- R²: **0.159** (best predictive power)
+
 **VGG-like architecture (best accuracy):**
 
 - Training samples: ~2000 (after balancing)
@@ -351,6 +360,8 @@ LSTM(64)
 - Full dataset MAE: **0.100** (~5.7° error)
 - Training time: ~7s per epoch on M-series Mac
 - Configuration: seq_len=3, Huber loss (delta=0.1), dropout=0.2
+- Correlation: **0.490**
+- R²: **0.061**
 
 **Hybrid architecture (faster training):**
 
@@ -358,6 +369,8 @@ LSTM(64)
 - Full dataset MAE: **0.110** (~6.3° error)
 - Training time: ~5s per epoch (30% faster)
 - Configuration: seq_len=3, Huber loss (delta=0.1), dropout=0.2
+- Correlation: **0.478**
+- R²: **-0.057**
 
 ### Jungle Dataset
 
