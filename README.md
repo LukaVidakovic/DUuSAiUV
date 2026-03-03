@@ -21,6 +21,7 @@ pip install -r requirements.txt
 ```
 
 This single command will:
+
 - Train the model (~2 minutes)
 - Evaluate on full dataset
 - Generate annotated frames with visualization
@@ -64,6 +65,7 @@ All results saved to `artifacts/run_<timestamp>_make/`
 ### Core Model Files
 
 **`model.py`** - Production CNN+LSTM architecture
+
 - VGG-inspired CNN with 3×3 kernels (16→32→64→128 filters)
 - Single LSTM layer (64 units) for temporal modeling
 - Best accuracy: 0.100 MAE (~5.7° error)
@@ -71,6 +73,7 @@ All results saved to `artifacts/run_<timestamp>_make/`
 - **Use for**: Production deployment, best accuracy
 
 **`model_hybrid.py`** - Fast prototyping architecture
+
 - Progressive kernel sizes (5×5 → 3×3)
 - Larger receptive field in early layers
 - Accuracy: 0.110 MAE (~6.3° error)
@@ -80,6 +83,7 @@ All results saved to `artifacts/run_<timestamp>_make/`
 ### Training Scripts
 
 **`train.py`** - Main training script
+
 ```bash
 python train.py \
     --csv data/self_driving_car_dataset_make/driving_log.csv \
@@ -90,7 +94,9 @@ python train.py \
     --seq_len 3 \
     --zero_fraction 0.1
 ```
+
 Features:
+
 - Automatic data balancing (keeps only 10% of zero angles)
 - Horizontal flip augmentation for non-zero angles
 - Huber loss (delta=0.1) for better large error handling
@@ -102,6 +108,7 @@ Features:
 ### Inference & Visualization
 
 **`predict.py`** - Real-time inference with visualization
+
 ```bash
 # Run on dataset CSV
 python predict.py \
@@ -119,12 +126,14 @@ python predict.py \
 ```
 
 Visualization features:
+
 - **Info panel**: Prediction, Ground Truth, Error (when GT available)
 - **Steering wheel**: Dual needles (green=prediction, yellow=GT)
 - **Lane change warning**: Red border + "! LANE CHANGE !" banner
 - **Save frames**: Use `--output_dir` to save annotated images
 
 Key options:
+
 - `--show`: Display frames in window (press Q to quit)
 - `--max_frames N`: Limit number of frames to process
 - `--output_dir PATH`: Save annotated frames
@@ -135,6 +144,7 @@ Key options:
 ### Evaluation & Metrics
 
 **`evaluate.py`** - Comprehensive offline evaluation
+
 ```bash
 python evaluate.py \
     --model steering_model.keras \
@@ -146,6 +156,7 @@ python evaluate.py \
 ```
 
 Outputs:
+
 - **JSON metrics**: MAE, RMSE, Max Error, Correlation, R², lane change stats
 - **CSV predictions**: Per-frame GT/prediction/error/lane events
 - **Use for**: Submission artifacts, model comparison, debugging
@@ -153,6 +164,7 @@ Outputs:
 ### Data Loading
 
 **`data_loader.py`** - Keras Sequence generator
+
 - Handles CSV parsing and image loading
 - Applies horizontal flip augmentation (marked with `|FLIP` suffix)
 - Creates temporal sequences (sliding window)
@@ -162,6 +174,7 @@ Outputs:
 ### Lane Change Detection
 
 **`lane_change_detector.py`** - Two-stage heuristic detector
+
 - **Stage 1 (Candidate)**: Sustained steering over threshold (5+ frames)
 - **Stage 2 (Confirmation)**: Settling near straight or counter-steer
 - Cooldown period to prevent repeated triggers
@@ -189,9 +202,9 @@ Outputs:
 
 The dataset CSV (`driving_log.csv`) has the following columns:
 
-| centercam | leftcam | rightcam | steering_angle | throttle | reverse | speed |
-|-----------|---------|----------|----------------|----------|---------|-------|
-| path/to/jpg | … | … | −1 … 1 | … | … | … |
+| centercam   | leftcam | rightcam | steering_angle | throttle | reverse | speed |
+| ----------- | ------- | -------- | -------------- | -------- | ------- | ----- |
+| path/to/jpg | …       | …        | −1 … 1         | …        | …       | …     |
 
 **Note:** The `data/` directory is excluded from git (.gitignore).
 
@@ -220,17 +233,18 @@ The **easiest and recommended way** to run the entire project:
 ### What It Does
 
 1. **Training Phase** (unless `--skip_train`)
+
    - Loads and balances dataset
    - Trains CNN+LSTM model
    - Saves best checkpoint to `artifacts/run_<timestamp>_<dataset>/steering_model.keras`
-
 2. **Evaluation Phase**
+
    - Runs model on full dataset (or `--eval_max_frames`)
    - Calculates MAE, RMSE, Correlation, R²
    - Saves metrics to `evaluation_metrics.json`
    - Saves per-frame predictions to `frame_predictions.csv`
-
 3. **Visualization Phase** (unless `--skip_predict`)
+
    - Generates annotated frames (default: 800 frames, or `--pred_max_frames`)
    - Saves to `output_frames/`
    - Displays in window if `--show` flag used
@@ -331,6 +345,7 @@ LSTM(64)
 ### Make Dataset (Recommended)
 
 **VGG-like architecture (best accuracy):**
+
 - Training samples: ~2000 (after balancing)
 - Best validation MAE: **0.122** (~7.0° error)
 - Full dataset MAE: **0.100** (~5.7° error)
@@ -338,6 +353,7 @@ LSTM(64)
 - Configuration: seq_len=3, Huber loss (delta=0.1), dropout=0.2
 
 **Hybrid architecture (faster training):**
+
 - Best validation MAE: **0.125** (~7.2° error)
 - Full dataset MAE: **0.110** (~6.3° error)
 - Training time: ~5s per epoch (30% faster)
@@ -345,29 +361,36 @@ LSTM(64)
 
 ### Jungle Dataset
 
+**VGG-like architecture (with seq_len=3):**
 - Training samples: ~4000 (after balancing)
-- Best validation MAE: **0.231** (~13.2° error)
-- Configuration: seq_len=5, MAE loss
+- Best validation MAE: **0.174** (~10.0° error)
+- Full dataset MAE: **0.209** (~12.0° error)
+- Training time: ~14s per epoch on M-series Mac
+- Configuration: seq_len=3, Huber loss (delta=0.1), dropout=0.2
+- Correlation: **0.812** (much better than make dataset)
+- R²: **0.642** (good predictive power)
 
 ### Model Comparison
 
-| Model | Val MAE | Full MAE | Improvement | Speed |
-|-------|---------|----------|-------------|-------|
-| Baseline (original) | 0.289 | - | - | - |
-| Improved v2 | 0.259 | - | +10.4% | - |
-| Balanced | 0.231 | - | +20.1% | - |
-| **VGG-like (Final)** | **0.122** | **0.100** | **+57.8%** ✅ | 7s/epoch |
-| Hybrid (5×5→3×3) | 0.125 | 0.110 | +56.7% | 5s/epoch ⚡ |
+| Model                | Val MAE   | Full MAE  | Improvement  | Speed      |
+| -------------------- | --------- | --------- | ------------ | ---------- |
+| Baseline (original)  | 0.289     | -         | -            | -          |
+| Improved v2          | 0.259     | -         | +10.4%       | -          |
+| Balanced             | 0.231     | -         | +20.1%       | -          |
+| **VGG-like (Final)** | **0.122** | **0.100** | **+57.8%** ✅ | 7s/epoch   |
+| Hybrid (5×5→3×3)     | 0.125     | 0.110     | +56.7%       | 5s/epoch ⚡ |
 
 ### When to Use Which Model
 
-**VGG-like (steering_model_make_huber.keras):**
+**VGG-like:**
+
 - ✅ Production deployment
 - ✅ Best accuracy (0.100 MAE)
 - ✅ Best generalization
 - ✅ Most stable results
 
-**Hybrid (steering_model_make_hybrid.keras):**
+**Hybrid:**
+
 - ✅ Fast prototyping and iterations
 - ✅ 30% faster training
 - ✅ Similar performance (difference ~1°)
@@ -380,19 +403,23 @@ LSTM(64)
 `LaneChangeDetector` uses a two-stage heuristic to detect lane changes:
 
 ### Stage 1: Candidate Start
+
 - `abs(angle)` exceeds `threshold` (default: 0.2)
 - Sustained for at least `min_hold_frames` (default: 5) consecutive frames
 - Same steering direction (no sign changes)
 
 ### Stage 2: Confirmation
+
 - Within `max_settle_frames` (default: 25), steering either:
   - Returns near straight (`abs(angle) <= settle_threshold`, default: 0.08)
   - Shows opposite-sign counter-steer
 
 ### Cooldown
+
 - After event fires, suppresses repeated triggers for `cooldown_frames` (default: 20)
 
 ### Visual Warning
+
 - Red border around frame
 - "! LANE CHANGE !" banner at top
 - Displayed for 30 frames after event
@@ -410,6 +437,7 @@ python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
 Tests cover:
+
 - Small angles (no trigger)
 - Sustained angle with settling (trigger)
 - Cooldown period (no repeated trigger)
@@ -430,18 +458,21 @@ Tests cover:
 
 ### Visualization Components
 
-**Info Panel (top-left):**
+**Info Panel :**
+
 - Prediction: Current predicted steering angle
 - Ground Truth: Actual angle from dataset (if available)
 - Error: Absolute difference (if GT available)
 
-**Steering Wheel (bottom-left):**
+**Steering Wheel):**
+
 - Large circular wheel (radius 100px)
 - Green needle: Predicted angle
 - Yellow needle: Ground truth (if available)
 - Rotates proportionally to angle (-1 to +1 maps to -90° to +90°)
 
 **Lane Change Warning:**
+
 - Red border (20px thick) around entire frame
 - Red banner at top with "! LANE CHANGE !" text
 - Triggered by two-stage lane change detector
@@ -462,12 +493,14 @@ Tests cover:
 
 **The Problem:**
 The original Udacity dataset is heavily imbalanced:
+
 - **78% zero steering angles** (straight driving)
 - **22% non-zero angles** (turns and lane changes)
   - Only 2.9% positive (right turns)
   - 19.2% negative (left turns)
 
 This imbalance causes the model to:
+
 - Overfit to straight driving
 - Poorly predict turns and lane changes
 - Have high bias toward zero predictions
@@ -476,48 +509,55 @@ This imbalance causes the model to:
 Implemented in `train.py` via `balance_dataset()` function:
 
 1. **Downsample zero angles**: Keep only 10% of zero-angle samples
+
    ```python
    zero_df = df[df["steering_angle"] == 0.0].sample(frac=0.1)
    ```
-
 2. **Keep all non-zero angles**: Preserve all turning samples
+
    ```python
    non_zero_df = df[df["steering_angle"] != 0.0]
    ```
-
 3. **Horizontal flip augmentation**: Mirror all non-zero samples
+
    ```python
    # For each non-zero sample, create flipped version
    flipped_row["centercam"] = row["centercam"] + "|FLIP"
    flipped_row["steering_angle"] = -row["steering_angle"]
    ```
+
    - Doubles non-zero samples
    - Balances left/right turn distribution
    - Handled automatically by `data_loader.py` during training
 
 **The Result:**
 Balanced dataset composition:
+
 - **15% zero angles** (306 samples)
 - **42.5% original non-zero** (869 samples)
 - **42.5% flipped non-zero** (869 samples)
 - **Total: 2044 samples** (from original 3930)
 
 **Impact on Model Performance:**
+
 - Baseline (imbalanced): 0.289 MAE
 - Balanced dataset: 0.231 MAE → **20% improvement**
 - Final model (balanced + other improvements): 0.100 MAE → **57.8% improvement**
 
 ### Loss Function
+
 - **Huber loss** (delta=0.1) instead of MAE
 - Better handling of large steering changes (lane changes, sharp turns)
 - More robust to outliers than MSE
 
 ### Sequence Length
+
 - Reduced from 5 to 3 frames for quicker reactions
 - Balances temporal context with responsiveness
 - Improves performance on sharp maneuvers
 
 ### Dropout Strategy
+
 - CNN: 0.4 dropout after feature extraction
 - LSTM: 0.2 dropout for faster response
 - Prevents overfitting while maintaining reactivity
@@ -546,23 +586,27 @@ MIT License - See LICENSE file for details.
 ## Tips & Troubleshooting
 
 ### Training Tips
+
 - Use `seq_len=3` for best results on make dataset
 - Increase `--epochs` if validation loss still decreasing
 - Reduce `--batch_size` if running out of memory
 - Use `--zero_fraction 0.1` for balanced dataset
 
 ### Visualization Tips
+
 - Use `--max_frames 200` for quick preview
 - Use `--show` to see results in real-time
 - Save frames with `--output_dir` for later review
 - Press Q to quit visualization window
 
 ### Performance Tips
+
 - Use hybrid model for faster training (30% speedup)
 - Reduce `--eval_max_frames` for quick evaluation
 - Skip prediction phase with `--skip_predict` if only need metrics
 
 ### Common Issues
+
 - **"CSV not found"**: Check dataset path in `data/` directory
 - **"Model file not found"**: Train model first or use `--skip_train` with existing model
 - **Slow training**: Reduce batch size or use hybrid model
