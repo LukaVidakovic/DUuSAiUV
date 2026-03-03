@@ -29,22 +29,7 @@ This single command will:
 
 All results saved to `artifacts/run_<timestamp>_make_deep/`
 
----
-
-## 🎓 For Project Presentation / Defense
-
-### Run All Models with Full Visualization
-
-**Best Model (Deep - Recommended for presentation):**
-```bash
-# Make dataset with Deep model (best accuracy)
-./run_all.sh --dataset make --architecture deep --show
-
-# Jungle dataset with Deep model
-./run_all.sh --dataset jungle --architecture deep --show
-```
-
-**Alternative Models (for comparison):**
+**Try different models:**
 ```bash
 # VGG-like model (good balance)
 ./run_all.sh --dataset make --architecture vgg --show
@@ -53,38 +38,19 @@ All results saved to `artifacts/run_<timestamp>_make_deep/`
 ./run_all.sh --dataset make --architecture hybrid --show
 ```
 
-### Quick Demo (Limited Frames)
-```bash
-# Fast demo with 200 frames for presentation
-./run_all.sh --dataset make --architecture deep --pred_max_frames 200 --show
-```
-
-### Use Pre-trained Models (Skip Training)
-```bash
-# Deep model
-./run_all.sh --dataset make --architecture deep \
-    --skip_train --model steering_model_make_deep.keras --show
-
-# VGG-like model
-./run_all.sh --dataset make --architecture vgg \
-    --skip_train --model steering_model_make_huber.keras --show
-
-# Hybrid model
-./run_all.sh --dataset make --architecture hybrid \
-    --skip_train --model steering_model_make_hybrid.keras --show
-```
-
 ---
 
 ## Project Structure
 
 ```
 .
-├── model.py               # VGG-like CNN + LSTM architecture (production)
+├── model.py               # VGG-like CNN + LSTM architecture
+├── model_deep.py          # Deep CNN + 2×LSTM (best performance)
 ├── model_hybrid.py        # Hybrid CNN (5×5→3×3 kernels, faster training)
 ├── data_loader.py         # Keras Sequence dataset generator with augmentation
 ├── lane_change_detector.py# Two-stage stateful lane-change detector
-├── train.py               # Training script with data balancing (CLI)
+├── train.py               # Training script for VGG-like model
+├── train_deep.py          # Training script for deep model
 ├── train_hybrid.py        # Training script for hybrid model
 ├── predict.py             # Inference + visualization script (CLI)
 ├── evaluate.py            # Offline evaluation + metrics export (CLI)
@@ -102,20 +68,28 @@ All results saved to `artifacts/run_<timestamp>_make_deep/`
 │       └── IMG/
 └── README.md
 ```
-
 ---
 
 ## Python Files Overview
 
 ### Core Model Files
 
-**`model.py`** - Production CNN+LSTM architecture
+**`model_deep.py`** - Deep CNN+LSTM architecture (BEST OVERALL)
+
+- VGG-inspired CNN with 3×3 kernels (16→32→64→128 filters)
+- **2 stacked LSTM layers** (64 units each) for better temporal modeling
+- Best accuracy: **0.098 MAE** (~5.6° error)
+- Best correlation: **0.524**, Best R²: **0.159**
+- Training time: ~7s/epoch on M-series Mac
+- **Use for**: Production deployment, best accuracy, final submission
+
+**`model.py`** - VGG-like CNN+LSTM architecture
 
 - VGG-inspired CNN with 3×3 kernels (16→32→64→128 filters)
 - Single LSTM layer (64 units) for temporal modeling
-- Best accuracy: 0.100 MAE (~5.7° error)
+- Accuracy: 0.100 MAE (~5.7° error)
 - Training time: ~7s/epoch on M-series Mac
-- **Use for**: Production deployment, best accuracy
+- **Use for**: Good balance, stable results
 
 **`model_hybrid.py`** - Fast prototyping architecture
 
@@ -127,7 +101,20 @@ All results saved to `artifacts/run_<timestamp>_make_deep/`
 
 ### Training Scripts
 
-**`train.py`** - Main training script
+**`train_deep.py`** - Training script for deep model (RECOMMENDED)
+
+```bash
+python train_deep.py \
+    --csv data/self_driving_car_dataset_make/driving_log.csv \
+    --data_dir data/self_driving_car_dataset_make/IMG \
+    --model steering_model_deep.keras \
+    --epochs 20 \
+    --batch_size 32 \
+    --seq_len 3 \
+    --zero_fraction 0.1
+```
+
+**`train.py`** - Training script for VGG-like model
 
 ```bash
 python train.py \
@@ -140,15 +127,15 @@ python train.py \
     --zero_fraction 0.1
 ```
 
-Features:
+**`train_hybrid.py`** - Training script for hybrid model
+
+Features (all training scripts):
 
 - Automatic data balancing (keeps only 10% of zero angles)
 - Horizontal flip augmentation for non-zero angles
 - Huber loss (delta=0.1) for better large error handling
 - Early stopping + learning rate reduction
 - Saves best model checkpoint
-
-**`train_hybrid.py`** - Training for hybrid model (same interface as `train.py`)
 
 ### Inference & Visualization
 
@@ -262,17 +249,25 @@ The **easiest and recommended way** to run the entire project:
 ### Basic Usage
 
 ```bash
-# Train + evaluate + visualize (make dataset)
-./run_all.sh --dataset make --show
+# Train + evaluate + visualize with Deep model (best)
+./run_all.sh --dataset make --architecture deep --show
 
-# Train + evaluate + visualize (jungle dataset)
-./run_all.sh --dataset jungle --show
+# Train + evaluate + visualize with VGG-like model
+./run_all.sh --dataset make --architecture vgg --show
+
+# Train + evaluate + visualize with Hybrid model (fastest)
+./run_all.sh --dataset make --architecture hybrid --show
+
+# Jungle dataset with Deep model
+./run_all.sh --dataset jungle --architecture deep --show
 
 # Quick test (5 epochs, limited frames)
-./run_all.sh --dataset make --epochs 5 --eval_max_frames 1500 --pred_max_frames 400
+./run_all.sh --dataset make --architecture deep --epochs 5 \
+    --eval_max_frames 1500 --pred_max_frames 400
 
 # Skip training, use existing model
-./run_all.sh --dataset make --skip_train --model steering_model_make_huber.keras --show
+./run_all.sh --dataset make --architecture deep \
+    --skip_train --model steering_model_make_deep.keras --show
 ```
 
 ### What It Does
@@ -280,8 +275,8 @@ The **easiest and recommended way** to run the entire project:
 1. **Training Phase** (unless `--skip_train`)
 
    - Loads and balances dataset
-   - Trains CNN+LSTM model
-   - Saves best checkpoint to `artifacts/run_<timestamp>_<dataset>/steering_model.keras`
+   - Trains selected CNN+LSTM model (deep/vgg/hybrid)
+   - Saves best checkpoint to `artifacts/run_<timestamp>_<dataset>_<arch>/steering_model.keras`
 2. **Evaluation Phase**
 
    - Runs model on full dataset (or `--eval_max_frames`)
@@ -322,7 +317,7 @@ Options:
 ### Output Structure
 
 ```
-artifacts/run_<timestamp>_<dataset>/
+artifacts/run_<timestamp>_<dataset>_<arch>/
 ├── steering_model.keras           # Trained model
 ├── evaluation_metrics.json        # Aggregate metrics
 ├── frame_predictions.csv          # Per-frame predictions
@@ -439,14 +434,14 @@ LSTM(64)
 
 ### Model Comparison
 
-| Model | Val MAE | Full MAE | Correlation | R² | Improvement | Speed |
-|-------|---------|----------|-------------|-----|-------------|-------|
-| Baseline (original) | 0.289 | - | - | - | - | - |
-| Improved v2 | 0.259 | - | - | - | +10.4% | - |
-| Balanced | 0.231 | - | - | - | +20.1% | - |
-| **Deep (2×LSTM)** | **0.124** | **0.098** | **0.524** | **0.159** | **+66.1%** ✅ | 7s/epoch |
-| VGG-like | 0.122 | 0.100 | 0.490 | 0.061 | +57.8% | 7s/epoch |
-| Hybrid (5×5→3×3) | 0.125 | 0.110 | 0.478 | -0.057 | +56.7% | 5s/epoch ⚡ |
+| Model               | Val MAE   | Full MAE  | Correlation | R²        | Improvement  | Speed      |
+| ------------------- | --------- | --------- | ----------- | --------- | ------------ | ---------- |
+| Baseline (original) | 0.289     | -         | -           | -         | -            | -          |
+| Improved v2         | 0.259     | -         | -           | -         | +10.4%       | -          |
+| Balanced            | 0.231     | -         | -           | -         | +20.1%       | -          |
+| **Deep (2×LSTM)**   | **0.124** | **0.098** | **0.524**   | **0.159** | **+66.1%** ✅ | 7s/epoch   |
+| VGG-like            | 0.122     | 0.100     | 0.490       | 0.061     | +57.8%       | 7s/epoch   |
+| Hybrid (5×5→3×3)    | 0.125     | 0.110     | 0.478       | -0.057    | +56.7%       | 5s/epoch ⚡ |
 
 ### When to Use Which Model
 
