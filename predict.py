@@ -229,12 +229,23 @@ def run_inference(
     sequence_length: int = 5,
     output_dir: Optional[str] = None,
     show: bool = False,
+    max_frames: Optional[int] = None,
     detector_threshold: float = 0.2,
+    detector_min_hold_frames: int = 5,
+    detector_settle_threshold: float = 0.08,
+    detector_max_settle_frames: int = 25,
+    detector_cooldown_frames: int = 20,
 ) -> None:
     print(f"Loading model from: {model_path}")
     model = tf.keras.models.load_model(model_path)
 
-    detector = LaneChangeDetector(threshold=detector_threshold)
+    detector = LaneChangeDetector(
+        threshold=detector_threshold,
+        min_hold_frames=detector_min_hold_frames,
+        settle_threshold=detector_settle_threshold,
+        max_settle_frames=detector_max_settle_frames,
+        cooldown_frames=detector_cooldown_frames,
+    )
 
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
@@ -244,6 +255,9 @@ def run_inference(
     lane_change_frames = 0  # how many frames to keep the warning visible
 
     for frame_idx, (img_path, gt_angle) in enumerate(pairs):
+        if max_frames is not None and frame_idx >= max_frames:
+            break
+
         img = load_and_resize(img_path, image_size)
         if img is None:
             print(f"  WARNING: could not read {img_path}, skipping.")
@@ -356,12 +370,32 @@ def parse_args() -> argparse.Namespace:
         help="Directory to save annotated frames (optional).",
     )
     parser.add_argument(
+        "--max_frames", type=int, default=None,
+        help="Optional cap on source frames to process (faster checks).",
+    )
+    parser.add_argument(
         "--show", action="store_true",
         help="Display frames in a window while running.",
     )
     parser.add_argument(
         "--lane_threshold", type=float, default=0.2,
         help="Steering-angle threshold for lane-change detection.",
+    )
+    parser.add_argument(
+        "--lane_min_hold_frames", type=int, default=5,
+        help="Consecutive above-threshold frames needed to start a lane-change candidate.",
+    )
+    parser.add_argument(
+        "--lane_settle_threshold", type=float, default=0.08,
+        help="Angle magnitude treated as settled after lane-change candidate.",
+    )
+    parser.add_argument(
+        "--lane_max_settle_frames", type=int, default=25,
+        help="Max frames to confirm candidate as lane-change before dropping it.",
+    )
+    parser.add_argument(
+        "--lane_cooldown_frames", type=int, default=20,
+        help="Suppression window after each lane-change event.",
     )
     return parser.parse_args()
 
@@ -389,7 +423,12 @@ def main() -> None:
         sequence_length=args.seq_len,
         output_dir=args.output_dir,
         show=args.show,
+        max_frames=args.max_frames,
         detector_threshold=args.lane_threshold,
+        detector_min_hold_frames=args.lane_min_hold_frames,
+        detector_settle_threshold=args.lane_settle_threshold,
+        detector_max_settle_frames=args.lane_max_settle_frames,
+        detector_cooldown_frames=args.lane_cooldown_frames,
     )
 
 
