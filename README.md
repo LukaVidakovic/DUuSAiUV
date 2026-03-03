@@ -361,14 +361,22 @@ LSTM(64)
 
 ### Jungle Dataset
 
-**VGG-like architecture (with seq_len=3):**
+**VGG-like architecture (best accuracy):**
 - Training samples: ~4000 (after balancing)
 - Best validation MAE: **0.174** (~10.0° error)
 - Full dataset MAE: **0.209** (~12.0° error)
 - Training time: ~14s per epoch on M-series Mac
 - Configuration: seq_len=3, Huber loss (delta=0.1), dropout=0.2
-- Correlation: **0.812** (much better than make dataset)
+- Correlation: **0.812** (excellent temporal modeling)
 - R²: **0.642** (good predictive power)
+
+**Hybrid architecture (faster training):**
+- Best validation MAE: **0.172** (~9.9° error)
+- Full dataset MAE: **0.238** (~13.6° error)
+- Training time: ~11s per epoch (21% faster)
+- Configuration: seq_len=3, Huber loss (delta=0.1), dropout=0.2
+- Correlation: **0.788** (good temporal modeling)
+- R²: **0.560** (decent predictive power)
 
 ### Model Comparison
 
